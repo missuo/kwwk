@@ -462,9 +462,9 @@ struct AnthropicProviderTests {
         #expect(json["temperature"] == nil)
     }
 
-    // Native compaction asks for ~1.8k tokens with the turn's reasoning. On an
-    // adaptive-only Claude, thinking alone could spend that and Anthropic then
-    // returned a compaction block with `"content": null`.
+    // A low explicit maxTokens with adaptive thinking can be spent on thinking
+    // alone, leaving Anthropic to return an empty answer or a compaction block
+    // whose content is null.
     @Test("adaptive thinking raises a low explicit cap to preserve answer headroom")
     func adaptiveThinkingRaisesLowExplicitMaxTokens() async throws {
         var model = Self.reasoningModel

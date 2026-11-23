@@ -299,7 +299,11 @@ enum ContextCompactionPipeline {
         The final \(plan.recentTail.count) transcript records are retained verbatim after
         this summary; summarize only the history preceding that retained tail.
         """
-        let maxTokens = anthropic
+        // Leave maxTokens unset when summaryMaxTokens is 0 (automatic), matching
+        // CompactionSummaryGenerator. Only an explicit positive summaryMaxTokens
+        // caps the Anthropic native request; otherwise the encoder uses the
+        // model/route ceiling.
+        let maxTokens = anthropic && request.config.summaryMaxTokens > 0
             ? min(
                 recapTokenBudget,
                 CompactionSummaryGenerator.outputTokenReserve(

@@ -177,20 +177,22 @@ struct NativeCompactionTests {
     }
 
     // Seen on claude-opus-5-5 over OAuth when adaptive thinking spent max_tokens:
-    // stop_reason "compaction" with a block whose content is null. The route
-    // worked, so the pipeline should fall back to a local summary, not fail.
+    // stop_reason "compaction" with a block whose content is null. Keep this a
+    // non-retryable ProviderFailure so the pipeline falls back to a local
+    // summary while still emitting the verbose diagnostic.
     @Test(arguments: [#""content":null"#, #""content":"""#, #""content":"  \n""#, ""])
-    func anthropicEmptySummaryFallsBackToLocal(content: String) async throws {
+    func anthropicEmptySummaryThrowsProviderFailure(content: String) async {
         let fields = content.isEmpty ? #""type":"compaction""# : #""type":"compaction","# + content
         let body = #"{"stop_reason":"compaction","content":[{"# + fields + "}]}"
         let provider = AnthropicProvider(client: StubSSEClient(body: body))
-        let result = try await provider.compact(
-            model: Self.claude,
-            context: Context(messages: [.user(UserMessage(text: "history"))]),
-            instructions: "",
-            options: nil
-        )
-        #expect(result == nil)
+        await #expect(throws: ProviderFailure.self) {
+            try await provider.compact(
+                model: Self.claude,
+                context: Context(messages: [.user(UserMessage(text: "history"))]),
+                instructions: "",
+                options: nil
+            )
+        }
     }
 
     @Test func anthropicMissingCompactionBlockRemainsAnError() async {
