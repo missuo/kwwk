@@ -835,5 +835,31 @@ struct AnthropicProviderTests {
         #expect(result.usage.reasoning == 7)
         #expect(result.usage.output == 20)
         #expect(result.usage.totalTokens == 160)
+        #expect(result.usage.speed == nil)
+    }
+
+    @Test("usage keeps the speed tier Anthropic reports and persists it")
+    func usageCapturesReportedSpeed() async throws {
+        let body = Self.usageSSE.replacingOccurrences(
+            of: #""ephemeral_1h_input_tokens":40}}"#,
+            with: #""ephemeral_1h_input_tokens":40},"speed":"fast"}"#)
+        let client = StubSSEClient(body: body)
+        let provider = AnthropicProvider(client: client, defaultAPIKey: "k")
+        let s = provider.stream(
+            model: Self.sampleModel,
+            context: Context(messages: [.user(UserMessage(text: "hi"))]),
+            options: nil
+        )
+        for await _ in s {}
+        let result = await s.result()
+        // message_delta carries no speed; the message_start value must survive it.
+        #expect(result.usage.speed == "fast")
+        #expect(result.usage.output == 20)
+
+        let encoded = try JSONEncoder().encode(result.usage)
+        #expect(String(decoding: encoded, as: UTF8.self).contains(#""speed":"fast""#))
+        #expect(try JSONDecoder().decode(Usage.self, from: encoded).speed == "fast")
+        let unreported = try JSONEncoder().encode(Usage(input: 1))
+        #expect(!String(decoding: unreported, as: UTF8.self).contains("speed"))
     }
 }

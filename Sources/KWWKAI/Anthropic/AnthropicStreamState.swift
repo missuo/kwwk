@@ -70,6 +70,8 @@ final class AnthropicStreamState: @unchecked Sendable {
            case .int(let v) = cc["ephemeral_1h_input_tokens"] ?? .null { usage.cacheWrite1h = v }
         if case .object(let d) = obj["output_tokens_details"] ?? .null,
            case .int(let v) = d["thinking_tokens"] ?? .null { usage.reasoning = v }
+        // Fast mode is reported, not inferred: keep the tier the API says it served.
+        if case .string(let v) = obj["speed"] ?? .null, !v.isEmpty { usage.speed = v }
         usage.totalTokens = usage.input + usage.output + usage.cacheRead + usage.cacheWrite
         updateCost()
     }
