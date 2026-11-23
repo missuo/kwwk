@@ -264,6 +264,38 @@ struct NativeCompactionTests {
         #expect(client.lastRequest?.url.path.hasSuffix("/responses/compact") == true)
     }
 
+    // Seen on claude-opus-5-5 over OAuth when adaptive thinking spent max_tokens:
+    // stop_reason "compaction" with a block whose content is null. Keep this a
+    // non-retryable ProviderFailure so the pipeline falls back to a local
+    // summary while still emitting the verbose diagnostic.
+    @Test(arguments: [#""content":null"#, #""content":"""#, #""content":"  \n""#, ""])
+    func anthropicEmptySummaryThrowsProviderFailure(content: String) async {
+        let fields = content.isEmpty ? #""type":"compaction""# : #""type":"compaction","# + content
+        let body = #"{"stop_reason":"compaction","content":[{"# + fields + "}]}"
+        let provider = AnthropicProvider(client: StubSSEClient(body: body))
+        await #expect(throws: ProviderFailure.self) {
+            try await provider.compact(
+                model: Self.claude,
+                context: Context(messages: [.user(UserMessage(text: "history"))]),
+                instructions: "",
+                options: nil
+            )
+        }
+    }
+
+    @Test func anthropicMissingCompactionBlockRemainsAnError() async {
+        let body = #"{"stop_reason":"compaction","content":[{"type":"text","text":"hi"}]}"#
+        let provider = AnthropicProvider(client: StubSSEClient(body: body))
+        await #expect(throws: ProviderFailure.self) {
+            try await provider.compact(
+                model: Self.claude,
+                context: Context(messages: []),
+                instructions: "",
+                options: nil
+            )
+        }
+    }
+
     // pi #7048's no-truncated-summary invariant also applies to native payloads.
     @Test(arguments: ["max_tokens", "end_turn", "refusal"])
     func anthropicPartialSummaryIsNotAccepted(stop: String) async {

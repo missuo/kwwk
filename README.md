@@ -670,9 +670,8 @@ opt in with `ModelCompat.supportsServerCompaction = true`; `false` disables the
 capability. Unsupported routes, smaller Anthropic contexts, or a separate
 compaction model use the local summary pipeline. Native request failures remain
 visible after bounded retries and leave the existing context intact.
-Anthropic native summaries use the recap budget as their output cap (also
-bounded by `summaryMaxTokens` when set); Codex's compact endpoint manages its
-own output size.
+Anthropic native summaries leave the output cap automatic unless
+`summaryMaxTokens` is set; Codex's compact endpoint manages its own output size.
 
 Native payloads are persisted and replayed on subsequent requests. Codex's
 encrypted context keeps its source prefix for switching providers, where normal

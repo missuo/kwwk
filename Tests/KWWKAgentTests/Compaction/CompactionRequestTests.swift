@@ -453,7 +453,7 @@ struct CompactionRequestTests {
         #expect(String(decoding: try JSONEncoder().encode(outer), as: UTF8.self).contains("PRIVATE_OBJECTIVE"))
     }
 
-    @Test("Anthropic native requests honor summary budget and redact hidden inputs", arguments: [0, 1_024])
+    @Test("Anthropic native requests leave maxTokens automatic unless summaryMaxTokens is set and redact hidden inputs", arguments: [0, 1_024])
     func nativeSummaryBudget(cap: Int) async throws {
         let model = Model(
             id: "claude-sonnet-4-6",
@@ -468,11 +468,12 @@ struct CompactionRequestTests {
             summaryMaxTokens: cap,
             nativeCompaction: { model, context, _, options in
                 _ = await attempts.next()
-                let expected = cap > 0 ? cap : 1_800
-                #expect(options?.maxTokens == expected)
+                let expectedOption: Int? = cap > 0 ? cap : nil
+                let expectedWire = cap > 0 ? cap : model.maxTokens
+                #expect(options?.maxTokens == expectedOption)
                 let encoded = try AnthropicProvider.encodeBody(model: model, context: context, options: options)
                 let body = try JSONDecoder().decode([String: JSONValue].self, from: encoded)
-                #expect(body["max_tokens"] == .int(expected))
+                #expect(body["max_tokens"] == .int(expectedWire))
                 #expect(!String(decoding: encoded, as: UTF8.self).contains("PRIVATE_OBJECTIVE"))
                 return NativeCompactionResult(
                     summary: "summary",
@@ -501,6 +502,56 @@ struct CompactionRequestTests {
             config: config
         ).get()
         #expect(await attempts.count == 1)
+    }
+
+    @Test("an Anthropic native compaction returning no summary falls back to a local summary")
+    func emptyNativeSummaryUsesLocal() async throws {
+        let model = Model(
+            id: "claude-opus-5-5",
+            api: "anthropic-messages",
+            provider: "anthropic",
+            contextWindow: 200_000,
+            maxTokens: 64_000
+        )
+        let attempts = CompactionAttempts()
+        let config = AgentContextCompactionConfig(
+            minMessages: 2,
+            keepRecentTokens: 40,
+            nativeCompaction: { _, _, _, _ in
+                _ = await attempts.next()
+                throw ProviderFailure(message: "Anthropic compaction returned no summary")
+            }
+        )
+        let messages: [Message] = [
+            .user(UserMessage(text: String(repeating: "A", count: 240_000))),
+            .assistant(AssistantMessage(
+                content: [.text(TextContent(text: "done"))],
+                api: model.api,
+                provider: model.provider,
+                model: model.id
+            )),
+            .user(UserMessage(text: "next"))
+        ]
+        let result = try await AgentContextCompactor.compactMessages(
+            messages: messages,
+            model: model,
+            sessionId: nil,
+            config: config,
+            streamFn: { model, _, _ in
+                let stream = AssistantMessageStream()
+                stream.end(AssistantMessage(
+                    content: [.text(TextContent(text: "local summary"))],
+                    api: model.api,
+                    provider: model.provider,
+                    model: model.id
+                ))
+                return stream
+            }
+        ).get()
+        #expect(await attempts.count == 1)
+        guard case .user(let recap) = result.messages.first else { Issue.record("missing recap"); return }
+        #expect(recap.nativeCompaction == nil)
+        #expect(recap.content.contains { if case .text(let t) = $0 { return t.text.contains("local summary") }; return false })
     }
 
     private func history() -> [Message] {
