@@ -24,15 +24,28 @@ enum ProviderImageBudget {
         TextContent(text: imageOmissionText)
     )
 
+    /// Devin refuses a request over 32 MiB and relays each upstream's image
+    /// rules. kwwk has no byte clamp, so 40 images at the 500 KiB resize
+    /// target (27.3 MB base64) stay under it. Claude rejects edges over
+    /// 3,000 px past 20 images, and Devin relays images as sent. Measured by
+    /// oh-my-pi (can1357/oh-my-pi#19619).
+    static let devinLimit = 40
+    static let devinClaudeLimit = 20
+
     static func limit(for provider: String) -> Int {
         limits[provider] ?? defaultLimit
     }
 
     /// An explicit `compat.maxImagesPerRequest` wins; otherwise the table,
-    /// read by the provider the model behaves like.
+    /// read by the provider the model behaves like. Devin splits its limit
+    /// by the upstream model family.
     static func limit(for model: Model) -> Int {
         if let explicit = model.compat?.maxImagesPerRequest { return max(0, explicit) }
-        return limit(for: model.behaviorProvider)
+        let provider = model.behaviorProvider
+        if provider == "devin" {
+            return model.id.hasPrefix("claude-") ? devinClaudeLimit : devinLimit
+        }
+        return limit(for: provider)
     }
 
     static func clamp(_ context: Context, for model: Model) -> Context {
