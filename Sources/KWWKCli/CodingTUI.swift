@@ -299,7 +299,7 @@ func runCodingTUIInternal(
     }
 
     let recomputeTranscript: @MainActor @Sendable () -> Void = {
-        frame.setLiveLines(renderer.liveLines)
+        frame.setLiveLines(renderer.gutteredLiveLines)
     }
 
     // Modal overlay host — takes over the transcript area for selectors
@@ -311,7 +311,7 @@ func runCodingTUIInternal(
     let modal = ModalHost(
         renderModalLines: { lines in frame.setModalLines(lines) },
         restoreTranscript: {
-            let committed = renderer.drainCommits()
+            let committed = renderer.drainGutteredCommits()
             if !committed.isEmpty { runner.tui.commit(committed) }
             recomputeTranscript()
             updateFrameStatus()
@@ -358,7 +358,7 @@ func runCodingTUIInternal(
     /// the selector and make the UI feel noisy. They drain on close.
     let flushCommits: @MainActor @Sendable () -> Bool = {
         guard !modal.isOpen else { return false }
-        let committed = renderer.drainCommits()
+        let committed = renderer.drainGutteredCommits()
         if !committed.isEmpty {
             runner.tui.commit(committed)
             return true

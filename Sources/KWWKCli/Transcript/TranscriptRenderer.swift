@@ -163,6 +163,24 @@ final class TranscriptRenderer {
     /// width-agnostic (the terminal owns autowrap).
     var displayWidth: Int = 80
 
+    /// Markdown state for the assistant prose being streamed (open code fence).
+    private var markdown = MarkdownProse()
+
+    /// Columns transcript rows are laid out in: the display minus the left
+    /// gutter and the free last column of the live zone.
+    var contentWidth: Int { max(8, displayWidth - Self.gutter - 1) }
+
+    /// `drainCommits()` laid out for the screen: indented by the gutter so
+    /// the transcript lines up with the prompt box.
+    func drainGutteredCommits() -> [String] {
+        Self.applyGutter(drainCommits(), width: displayWidth)
+    }
+
+    /// `liveLines` laid out for the screen (see `drainGutteredCommits`).
+    var gutteredLiveLines: [String] {
+        Self.applyGutter(liveLines, width: displayWidth)
+    }
+
     init() {}
 
     func setThinkingDisplay(_ display: ThinkingDisplay) {
@@ -215,7 +233,7 @@ final class TranscriptRenderer {
                           let summary = BgNotificationSummary.parse(text) {
                     commit(summary.render())
                 } else {
-                    commit([""] + Theme.userBar(text, width: displayWidth))
+                    commit([""] + Theme.userBar(text, width: displayWidth - Self.gutter))
                 }
             case .assistant:
                 // A previous turn normally flushed at `.turnEnd`; keep this
@@ -228,6 +246,7 @@ final class TranscriptRenderer {
                 assistantCommittedDuringTurn = false
                 thinkingCommittedDuringAttempt = false
                 lastAssistantTextIndex = nil
+                markdown.reset()
                 // New turn — drop any prior turn's thinking state.
                 // Re-populated from `.thinkingStart` events below.
                 thinkingTimings.removeAll()
@@ -348,6 +367,7 @@ final class TranscriptRenderer {
                 assistantSegmentBuffer = ""
                 assistantCommittedDuringTurn = false
                 lastAssistantTextIndex = nil
+                markdown.reset()
                 recomputeLive()
                 flushQueuedVerbose()
             case .toolResult, .user:
@@ -415,6 +435,7 @@ final class TranscriptRenderer {
             assistantCommittedDuringTurn = false
             thinkingCommittedDuringAttempt = false
             lastAssistantTextIndex = nil
+            markdown.reset()
             queuedVerboseLines.removeAll()
             // The failed attempt's thinking is gone with the stream; the
             // retry's `messageStart` would clear these anyway, but the live
@@ -614,7 +635,7 @@ final class TranscriptRenderer {
             if !assistantCommittedDuringTurn {
                 out.append("")
             }
-            out.append(assistantSegmentBuffer)
+            out.append(contentsOf: markdown.preview(assistantSegmentBuffer, width: contentWidth))
         }
         // Open thinking: collapsed mode renders one ticking row whose elapsed
         // value is the sum of the staged adjacent blocks plus the currently
@@ -831,7 +852,11 @@ final class TranscriptRenderer {
             }
             return
         }
-        commitAssistantLines(segment.components(separatedBy: "\n"))
+        var rendered: [String] = []
+        for line in segment.components(separatedBy: "\n") {
+            rendered.append(contentsOf: markdown.render(line, width: contentWidth))
+        }
+        commitAssistantLines(rendered)
     }
 
     private func commitAssistantLines(_ lines: [String]) {

@@ -52,6 +52,6 @@ enum TranscriptSnapshot {
         // worse than the call simply not appearing, and the resumed model
         // context has no result for it either.
         renderer.sealFoldRun()
-        return renderer.drainCommits()
+        return renderer.drainGutteredCommits()
     }
 }

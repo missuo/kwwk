@@ -361,13 +361,13 @@ enum ANSI {
         return out
     }
 
-    private static let resetSequence = "\u{1B}[0m"
+    static let resetSequence = "\u{1B}[0m"
 
-    private static func isSGR(_ escape: String) -> Bool {
+    static func isSGR(_ escape: String) -> Bool {
         escape.hasPrefix("\u{1B}[") && escape.hasSuffix("m")
     }
 
-    private static func isSGRReset(_ escape: String) -> Bool {
+    static func isSGRReset(_ escape: String) -> Bool {
         guard isSGR(escape) else { return false }
         let params = escape
             .dropFirst(2)

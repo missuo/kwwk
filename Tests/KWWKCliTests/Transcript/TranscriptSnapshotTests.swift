@@ -30,7 +30,7 @@ struct TranscriptSnapshotTests {
         live.displayWidth = 160
         live.apply(.messageStart(message: reply))
         live.apply(.messageEnd(message: reply))
-        let liveLines = live.drainCommits()
+        let liveLines = live.drainGutteredCommits()
         let recap = TranscriptSnapshot.render([reply], width: 160)
         #expect(liveLines == recap)
         #expect(recap.contains { $0.contains("claude-fable-5") && $0.contains("claude-opus-4-8") })
@@ -67,7 +67,7 @@ struct TranscriptSnapshotTests {
         live.apply(.messageStart(message: user))
         live.apply(.messageStart(message: reply))
         live.apply(.messageEnd(message: reply))
-        let liveLines = live.drainCommits()
+        let liveLines = live.drainGutteredCommits()
 
         let recap = TranscriptSnapshot.render([user, reply], width: 80)
         #expect(recap == liveLines)
