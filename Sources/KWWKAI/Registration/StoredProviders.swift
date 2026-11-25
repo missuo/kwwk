@@ -29,27 +29,39 @@ import Foundation
 /// Throws `AuthResolveError.noCredentials` when the manager's source holds
 /// nothing (or no entry could be registered). Skipped entries — same-scope
 /// dual logins, unwired ids — are reported through `notice`.
+///
+/// `localAgy` opts into the user's local Antigravity CLI (see `AgyLocal`):
+/// when an `agy` binary is found it takes the `agy` scope — in place of the
+/// AirRelay route if `agy` credentials are stored, else as an extra,
+/// lowest-priority slot that needs no login. Off by default so library
+/// hosts keep the store-only behavior.
 public func registerAllStored(
     manager: OAuthManager,
     modelOverride: String? = nil,
     context1m: Bool = false,
+    localAgy: Bool = false,
     notice: @escaping @Sendable (String) -> Void = { _ in }
 ) async throws -> ResolvedAuth {
     let order = await storedProviderOrder(ids: manager.providerIds())
+    let useLocalAgy = localAgy && AgyLocal.discover() != nil
 
     // Split an explicit `provider/model` override and resolve which logged-in
     // store id it targets (prefer the priority order on ambiguity, e.g.
     // `anthropic/...` with both OAuth and API-key logins → OAuth).
     var forcedStoreId: String?
+    var forcedLocalAgy = false
     var activeModelId: String? = modelOverride
     if let mo = modelOverride, let slash = mo.firstIndex(of: "/") {
         let prefix = String(mo[..<slash])
         if let sid = order.first(where: { catalogProvider(forStoreId: $0) == prefix }) {
             forcedStoreId = sid
             activeModelId = String(mo[mo.index(after: slash)...])
+        } else if useLocalAgy, prefix == AgyOAuth.providerId {
+            forcedLocalAgy = true
+            activeModelId = String(mo[mo.index(after: slash)...])
         }
     }
-    let activeStoreId = forcedStoreId ?? order.first
+    let activeStoreId = forcedLocalAgy ? nil : (forcedStoreId ?? order.first)
 
     // Register each provider once. Skip a later provider whose `model.provider`
     // scope is already taken (same-vendor dual login, e.g. Anthropic OAuth +
@@ -67,6 +79,20 @@ public func registerAllStored(
             continue
         }
         let mo = storeId == activeStoreId ? activeModelId : nil
+        // Stored `agy` credentials point at AirRelay; on a machine with its
+        // own signed-in `agy`, talk to that instead.
+        if useLocalAgy, storeId == AgyOAuth.providerId,
+           let local = await AgyLocal.register(modelOverride: mo) {
+            seenScopes.insert(scope)
+            slots.append(ProviderSlot(
+                storeId: storeId,
+                catalogProvider: catalogProvider(forStoreId: storeId),
+                displayName: AgyLocal.displayName,
+                template: local.model
+            ))
+            if storeId == activeStoreId { active = local }
+            continue
+        }
         // Only the active provider primes its OAuth token at startup — the
         // others register their scoped provider + resolver + slot and refresh
         // lazily on first use (a `/model` switch). Priming every stored login
@@ -90,6 +116,15 @@ public func registerAllStored(
         if storeId == activeStoreId { active = resolved }
     }
 
+    // A local `agy` with nothing stored for it: one more slot, active only
+    // when asked for (`agy/<model>`) or when nothing else registered.
+    if useLocalAgy, !seenScopes.contains(AgyLocal.providerScope),
+       let local = await AgyLocal.register(modelOverride: forcedLocalAgy ? activeModelId : nil) {
+        seenScopes.insert(AgyLocal.providerScope)
+        slots.append(AgyLocal.slot(template: local.model))
+        if forcedLocalAgy || active == nil { active = local }
+    }
+
     guard let active else { throw AuthResolveError.noCredentials }
 
     // The agent holds one stable delegating closure; static-only sessions get
@@ -110,12 +145,14 @@ public func registerAllStored(
     store: OAuthStore,
     modelOverride: String? = nil,
     context1m: Bool = false,
+    localAgy: Bool = false,
     notice: @escaping @Sendable (String) -> Void = { _ in }
 ) async throws -> ResolvedAuth {
     try await registerAllStored(
         manager: OAuthManager(store: store),
         modelOverride: modelOverride,
         context1m: context1m,
+        localAgy: localAgy,
         notice: notice
     )
 }

@@ -60,6 +60,12 @@ func activateFreshLogin(
     if let existing = ctx.sessionProviders.slots.first(where: {
         $0.storeId != storeId && $0.template.provider == newScope
     }) {
+        if existing.storeId == AgyLocal.slotStoreId {
+            ctx.notify(Style.dimmed(
+                "  /login: saved \(storeId); this machine's own agy already serves these models (\(AgyLocal.disableEnvironmentKey)=0 to use AirRelay instead)"
+            ))
+            return
+        }
         ctx.notify(Style.dimmed(
             "  /login: saved \(storeId), but it shares a provider slot with the active \(existing.storeId) — /logout \(existing.storeId) first to use it"
         ))

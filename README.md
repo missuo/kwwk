@@ -63,6 +63,15 @@ Claude Code, Cursor, Devin, Kimi For Coding, xAI Grok, the Z.AI GLM Coding Plan,
 or OpenRouter; or an API key for Anthropic, OpenAI, Google (Gemini),
 OpenRouter, OpenCode Go or Zen, or any OpenAI-compatible endpoint).
 
+On a Mac with the Antigravity CLI (`agy`) installed and signed in, kwwk finds
+it on its own and lists its models under "Antigravity CLI (local)" in
+`/model`; `--model agy/<model>` starts on one. Requests go to the local
+`agy acp` (Agent Client Protocol) with no relay, and kwwk's tools reach it
+through a loopback MCP server, so tool calls still run in kwwk. Built-in agy
+tools are refused. Set `KWWK_AGY_LOCAL=0` to turn this off (and use AirRelay
+when an `agy` login is stored), or `KWWK_AGY_PATH` to point at a specific
+binary.
+
 Inside the TUI, `/help` lists slash commands (`/model`, `/thinking`,
 `/clear`, …). The agent ships with Bash, Read, Write, Edit, Grep, Find,
 LS, and background-task tools out of the box.

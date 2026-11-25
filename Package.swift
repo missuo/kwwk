@@ -78,6 +78,8 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+                // The loopback MCP server local `agy` reaches kwwk's tools on.
+                .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "DequeModule", package: "swift-collections"),
                 .product(name: "NIOHTTP2", package: "swift-nio-http2"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),

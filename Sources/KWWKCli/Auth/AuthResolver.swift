@@ -56,8 +56,16 @@ func resolveAgentAuth(
             store: store,
             modelOverride: modelOverride,
             context1m: context1m,
+            localAgy: true,
             notice: cliAuthNotice
         )
+    }
+
+    // No stored login, and `--model agy/<id>`: run on this Mac's own
+    // signed-in Antigravity CLI when there is one.
+    if let override = modelOverride, override.hasPrefix(AgyModels.modelPrefix),
+       let local = await localAgySession(modelId: override) {
+        return local
     }
 
     // No stored login: fall back to environment API keys (lowest priority),
@@ -90,7 +98,30 @@ func resolveAgentAuth(
         )
     }
 
+    // Nothing configured at all: this Mac's own Antigravity CLI, if found,
+    // runs the session without a `/login`. An override naming another
+    // provider (`openai/...`) is not an agy model, so it gets no session.
+    let bareOverride = modelOverride.flatMap { $0.contains("/") ? nil : $0 }
+    if modelOverride == nil || bareOverride != nil,
+       let local = await localAgySession(modelId: bareOverride) {
+        return local
+    }
+
     throw AuthResolveError.noCredentials
+}
+
+/// A session on the local Antigravity CLI alone (see `AgyLocal`), or nil
+/// when no `agy` is found.
+private func localAgySession(modelId: String?) async -> ResolvedAuth? {
+    guard let local = await AgyLocal.register(modelOverride: modelId) else { return nil }
+    let authResolvers = SessionAuthResolvers()
+    return ResolvedAuth(
+        model: local.model,
+        modelLabel: local.modelLabel,
+        authResolver: authResolvers.delegatingResolver(),
+        providerSlots: [AgyLocal.slot(template: local.model)],
+        authResolvers: authResolvers
+    )
 }
 
 /// Register a single freshly-logged-in provider mid-session: scoped provider

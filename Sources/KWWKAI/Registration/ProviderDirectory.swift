@@ -279,6 +279,9 @@ public func providerDisplayName(forStoreId storeId: String) -> String {
     if let descriptor = providerDescriptor(forStoreId: storeId) {
         return descriptor.displayName
     }
+    if storeId == AgyLocal.slotStoreId {
+        return AgyLocal.displayName
+    }
     if storeId.hasPrefix("env:") {
         return String(storeId.dropFirst(4)) + " (env)"
     }
