@@ -1,4 +1,5 @@
 import Foundation
+import NIOConcurrencyHelpers
 
 /// Build/version surface for the CLI, rendered on the TUI welcome card.
 /// Maintained by hand — no release tooling touches this file — so bump it
@@ -15,18 +16,89 @@ enum KWWKBuild {
 enum Theme {
     static let reset = "\u{1B}[0m"
 
-    // Core palette (24-bit RGB) — green family.
-    static let accent      = (r: 80,  g: 210, b: 140)   // headers, prompt glyph (emerald)
-    static let accentDim   = (r: 58,  g: 150, b: 104)   // forest
-    static let gradFrom    = (r: 72,  g: 196, b: 150)   // logo gradient (teal-green)
-    static let gradTo      = (r: 158, g: 230, b: 130)   // logo gradient (lime)
-    static let border      = (r: 64,  g: 92,  b: 76)    // box rules (muted forest)
-    static let muted       = (r: 140, g: 168, b: 148)   // secondary text (sage)
-    static let faint       = (r: 92,  g: 116, b: 100)   // tertiary / hints
-    static let text        = (r: 216, g: 224, b: 218)   // primary text
-    static let success     = (r: 110, g: 210, b: 140)
-    static let warn        = (r: 232, g: 178, b: 96)
-    static let userBarBg   = (r: 26,  g: 44,  b: 34)    // user message bar background
+    typealias RGB = (r: Int, g: Int, b: Int)
+
+    /// One palette per terminal background. Same green family in both; the
+    /// light one darkens foregrounds for contrast on white and swaps the dark
+    /// fills (user bar, selected chip) for pale tints.
+    struct Palette: Sendable {
+        let accent: RGB      // headers, prompt glyph (emerald)
+        let accentDim: RGB   // forest
+        let gradFrom: RGB    // logo gradient start (teal-green)
+        let gradTo: RGB      // logo gradient end (lime)
+        let border: RGB      // box rules
+        let muted: RGB       // secondary text
+        let faint: RGB       // tertiary / hints
+        let text: RGB        // primary text
+        let success: RGB
+        let warn: RGB
+        let userBarBg: RGB   // user message bar background
+        let chipBg: RGB      // selected-chip fill
+        let chipFg: RGB      // selected-chip label
+        let code: RGB        // markdown inline code and code blocks
+        let link: RGB        // markdown link text
+
+        static let dark = Palette(
+            accent: (80, 210, 140),
+            accentDim: (58, 150, 104),
+            gradFrom: (72, 196, 150),
+            gradTo: (158, 230, 130),
+            border: (64, 92, 76),
+            muted: (140, 168, 148),
+            faint: (92, 116, 100),
+            text: (216, 224, 218),
+            success: (110, 210, 140),
+            warn: (232, 178, 96),
+            userBarBg: (26, 44, 34),
+            chipBg: (34, 72, 52),
+            chipFg: (245, 250, 246),
+            code: (222, 178, 120),
+            link: (110, 180, 230)
+        )
+
+        static let light = Palette(
+            accent: (18, 138, 78),
+            accentDim: (28, 112, 72),
+            gradFrom: (22, 150, 106),
+            gradTo: (96, 168, 48),
+            border: (176, 196, 184),
+            muted: (86, 110, 96),
+            faint: (132, 152, 140),
+            text: (30, 38, 34),
+            success: (24, 140, 76),
+            warn: (176, 106, 16),
+            userBarBg: (226, 241, 231),
+            chipBg: (204, 232, 214),
+            chipFg: (18, 64, 40),
+            code: (168, 84, 20),
+            link: (24, 100, 180)
+        )
+    }
+
+    private static let appearanceBox = NIOLockedValueBox(TerminalAppearance.dark)
+
+    /// The terminal background the palette is drawn for. Set once at TUI
+    /// start from `TerminalAppearance.detect()`; dark until then.
+    static var appearance: TerminalAppearance {
+        get { appearanceBox.withLockedValue { $0 } }
+        set { appearanceBox.withLockedValue { $0 = newValue } }
+    }
+
+    static var palette: Palette { appearance == .light ? .light : .dark }
+
+    static var accent: RGB { palette.accent }
+    static var accentDim: RGB { palette.accentDim }
+    static var gradFrom: RGB { palette.gradFrom }
+    static var gradTo: RGB { palette.gradTo }
+    static var border: RGB { palette.border }
+    static var muted: RGB { palette.muted }
+    static var faint: RGB { palette.faint }
+    static var text: RGB { palette.text }
+    static var success: RGB { palette.success }
+    static var warn: RGB { palette.warn }
+    static var userBarBg: RGB { palette.userBarBg }
+    static var code: RGB { palette.code }
+    static var link: RGB { palette.link }
 
     static func fg(_ c: (r: Int, g: Int, b: Int)) -> String {
         "\u{1B}[38;2;\(c.r);\(c.g);\(c.b)m"
@@ -40,10 +112,14 @@ enum Theme {
         "\u{1B}[48;2;\(c.r);\(c.g);\(c.b)m"
     }
 
-    /// omp-style full-width user-message bar: a dark-green background row with
-    /// an accent `❯` glyph and the user's text in primary color. Padded to
-    /// `width` visible columns so the bar spans the line. Multi-line text is
-    /// returned as one bar per line. Committed to scrollback as a block.
+    /// omp-style full-width user-message bar: a tinted background row with an
+    /// accent `❯` glyph and the user's text in primary color. Multi-line text
+    /// is returned as one bar per line. Committed to scrollback as a block.
+    ///
+    /// The bar is filled to the right edge with erase-to-end-of-line (which
+    /// paints the current background), not trailing spaces: spaces become
+    /// real cells that wrap into a ragged second row when the window is
+    /// narrowed later. Text wider than `width - 1` is truncated.
     static func userBar(_ text: String, width: Int) -> [String] {
         let inner = max(0, width - 1)            // leave the last column clear
         let lines = text.components(separatedBy: "\n")
@@ -51,10 +127,8 @@ enum Theme {
             let glyph = i == 0 ? "❯ " : "  "
             let visText = ANSI.visibleWidth(raw) + 2
             let clipped = visText > inner ? ANSI.truncate(raw, to: max(0, inner - 2)) : raw
-            let used = 2 + ANSI.visibleWidth(clipped)
-            let pad = used < inner ? String(repeating: " ", count: inner - used) : ""
             return bg(userBarBg) + "\u{1B}[1m" + fg(accent) + glyph
-                + "\u{1B}[22m" + fg(Theme.text) + clipped + pad + reset
+                + "\u{1B}[22m" + fg(Theme.text) + clipped + "\u{1B}[K" + reset
         }
     }
 
@@ -64,8 +138,8 @@ enum Theme {
     static func chipText(_ s: String) -> String {
         bg(chipBg) + "\u{1B}[1m" + fg(chipFg) + " " + s + " " + reset
     }
-    static let chipBg = (r: 34, g: 72, b: 52)     // dark green selected-chip fill
-    static let chipFg = (r: 245, g: 250, b: 246)  // near-white chip label
+    static var chipBg: RGB { palette.chipBg }
+    static var chipFg: RGB { palette.chipFg }
 
     static func accentText(_ s: String, bold: Bool = true) -> String { paint(s, accent, bold: bold) }
     static func mutedText(_ s: String) -> String { paint(s, muted) }

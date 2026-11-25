@@ -48,6 +48,9 @@ public enum KWWK {
         context1m: Bool = false,
         resume: SessionResume = .none
     ) async throws {
+        // Pick the palette for the terminal's background before the TUI takes
+        // stdin, which is where the terminal's answer to the query arrives.
+        Theme.appearance = TerminalAppearance.detect()
         let workDir = cwd ?? FileManager.default.currentDirectoryPath
         let resolved: ResolvedAuth
         do {
